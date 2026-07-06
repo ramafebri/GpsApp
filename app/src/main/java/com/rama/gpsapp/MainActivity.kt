@@ -21,6 +21,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.rama.gpsapp.ui.deadreckoning.DeadReckoningScreen
+import com.rama.gpsapp.ui.deadreckoning.DeadReckoningViewModel
 import com.rama.gpsapp.ui.gestures.GestureSettingsScreen
 import com.rama.gpsapp.ui.gestures.GestureSettingsViewModel
 import com.rama.gpsapp.ui.theme.GpsAppTheme
@@ -35,6 +37,7 @@ class MainActivity : ComponentActivity() {
             GpsAppTheme {
                 val gestureViewModel: GestureSettingsViewModel = viewModel()
                 val antiTheftViewModel: AntiTheftViewModel = viewModel()
+                val deadReckoningViewModel: DeadReckoningViewModel = viewModel()
                 val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
@@ -52,7 +55,8 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val destinations = listOf(
                     AppDestination.Gestures,
-                    AppDestination.AntiTheft
+                    AppDestination.AntiTheft,
+                    AppDestination.DeadReckoning
                 )
                 val backStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = backStackEntry?.destination
@@ -98,6 +102,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
+                        composable(AppDestination.DeadReckoning.route) {
+                            DeadReckoningScreen(
+                                viewModel = deadReckoningViewModel,
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                        }
                     }
                 }
             }
@@ -120,5 +130,11 @@ private sealed class AppDestination(
         route = "anti_theft",
         label = "Anti-Theft",
         shortLabel = "A"
+    )
+
+    object DeadReckoning : AppDestination(
+        route = "dead_reckoning",
+        label = "Dead Reckoning",
+        shortLabel = "D"
     )
 }
