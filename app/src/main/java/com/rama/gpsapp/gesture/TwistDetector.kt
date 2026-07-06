@@ -22,7 +22,8 @@ class TwistDetector(
             peakTimestamps.removeFirst()
         }
 
-        val canTrigger = sample.timestampNanos - lastTriggerTimestamp >= cooldownNanos
+        val canTrigger = lastTriggerTimestamp == 0L ||
+            sample.timestampNanos - lastTriggerTimestamp >= cooldownNanos
         if (canTrigger && peakTimestamps.size >= requiredPeaks) {
             lastTriggerTimestamp = sample.timestampNanos
             peakTimestamps.clear()

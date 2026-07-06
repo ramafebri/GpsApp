@@ -12,6 +12,7 @@ class ShakeDetector(
     private val cooldownNanos: Long = 1_500_000_000L
 ) {
     private var previousMagnitude = 0f
+    private var hasPreviousSample = false
     private var previousTimestamp = 0L
     private var lastTriggerTimestamp = 0L
     private val peakTimestamps = ArrayDeque<Long>()
@@ -19,7 +20,8 @@ class ShakeDetector(
     fun onSample(sample: SensorSample): Boolean {
         val magnitude = sqrt(sample.x * sample.x + sample.y * sample.y + sample.z * sample.z)
 
-        if (previousTimestamp == 0L) {
+        if (!hasPreviousSample) {
+            hasPreviousSample = true
             previousTimestamp = sample.timestampNanos
             previousMagnitude = magnitude
             return false
@@ -43,7 +45,8 @@ class ShakeDetector(
             peakTimestamps.removeFirst()
         }
 
-        val canTrigger = sample.timestampNanos - lastTriggerTimestamp >= cooldownNanos
+        val canTrigger = lastTriggerTimestamp == 0L ||
+            sample.timestampNanos - lastTriggerTimestamp >= cooldownNanos
         if (canTrigger && peakTimestamps.size >= requiredPeaks) {
             lastTriggerTimestamp = sample.timestampNanos
             peakTimestamps.clear()

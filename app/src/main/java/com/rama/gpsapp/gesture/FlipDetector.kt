@@ -25,7 +25,8 @@ class FlipDetector(
                 return false
             }
             val heldLongEnough = sample.timestampNanos - faceDownStart >= holdNanos
-            val canTrigger = sample.timestampNanos - lastTriggerTimestamp >= cooldownNanos
+            val canTrigger = lastTriggerTimestamp == 0L ||
+                sample.timestampNanos - lastTriggerTimestamp >= cooldownNanos
             if (armed && heldLongEnough && canTrigger) {
                 armed = false
                 lastTriggerTimestamp = sample.timestampNanos

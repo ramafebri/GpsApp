@@ -1,7 +1,8 @@
-package com.rama.gpsapp.ui.gestures
+package com.rama.gpsapp.ui.theft
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -28,21 +29,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.rama.gpsapp.theft.TheftGuardStage
 
 @Composable
-fun GestureSettingsScreen(
-    viewModel: GestureSettingsViewModel,
+fun AntiTheftSettingsScreen(
+    viewModel: AntiTheftViewModel,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    val readPhoneStateLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) {
-        viewModel.refreshPermissionState()
-    }
     val postNotificationsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) {
@@ -57,56 +54,92 @@ fun GestureSettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
-            text = "Gesture-Based Shortcuts",
+            text = "Anti-Theft Alarm",
             style = MaterialTheme.typography.headlineSmall
         )
         Text(
-            text = "Trigger phone actions with physical gestures.",
+            text = "Arm your phone on a desk. If it is moved or rotated, a loud alarm starts.",
             style = MaterialTheme.typography.bodyMedium
         )
 
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Enable Background Detection", style = MaterialTheme.typography.titleMedium)
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Foreground service")
+                    Text("Armed", modifier = Modifier.weight(1f))
                     Switch(
-                        checked = state.settings.serviceEnabled,
-                        onCheckedChange = viewModel::setServiceEnabled
+                        checked = state.settings.armed,
+                        onCheckedChange = viewModel::setArmed
                     )
                 }
                 Text(
-                    text = "A persistent notification appears while detection runs.",
+                    text = "Status: ${statusText(state.stage, state.alarmActive)}",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Sensitivity", style = MaterialTheme.typography.titleMedium)
+                Text("Movement threshold: ${"%.2f".format(state.settings.movementSensitivity)}")
+                Slider(
+                    value = state.settings.movementSensitivity,
+                    valueRange = 0.8f..4.5f,
+                    onValueChange = viewModel::setMovementSensitivity
+                )
+
+                Text("Rotation threshold: ${"%.0f".format(state.settings.rotationSensitivityDegrees)} deg")
+                Slider(
+                    value = state.settings.rotationSensitivityDegrees,
+                    valueRange = 12f..120f,
+                    onValueChange = viewModel::setRotationSensitivityDegrees
+                )
+
+                val armDelay = state.settings.armDelaySeconds.toFloat()
+                Text("Arm delay: ${state.settings.armDelaySeconds}s")
+                Slider(
+                    value = armDelay,
+                    valueRange = 3f..30f,
+                    steps = 26,
+                    onValueChange = { viewModel.setArmDelaySeconds(it.toInt()) }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Vibrate with alarm", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = state.settings.vibrateEnabled,
+                        onCheckedChange = viewModel::setVibrateEnabled
+                    )
+                }
+
+                Button(onClick = viewModel::testAlarm) {
+                    Text("Test alarm (4s)")
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Permissions", style = MaterialTheme.typography.titleMedium)
-                PermissionRow(
-                    label = "Phone state (for flip-to-mute calls)",
-                    granted = state.permissions.phoneStateGranted,
-                    onRequest = { readPhoneStateLauncher.launch(Manifest.permission.READ_PHONE_STATE) }
-                )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     PermissionRow(
-                        label = "Notifications (for foreground service notice)",
+                        label = "Notifications (status + alarm)",
                         granted = state.permissions.notificationsGranted,
                         onRequest = { postNotificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
                     )
                 }
-                PermissionRow(
-                    label = "Do Not Disturb access (to mute ring stream)",
-                    granted = state.permissions.dndAccessGranted,
-                    onRequest = {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
-                    }
-                )
                 PermissionRow(
                     label = "Battery optimization exemption",
                     granted = state.permissions.ignoringBatteryOptimizations,
@@ -114,34 +147,20 @@ fun GestureSettingsScreen(
                         context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                     }
                 )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    PermissionRow(
+                        label = "Full-screen intent access",
+                        granted = state.permissions.fullScreenIntentAllowed,
+                        onRequest = {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+                }
             }
         }
-
-        GestureToggleCard(
-            title = "Shake to toggle flashlight",
-            enabled = state.settings.shakeEnabled,
-            onEnabledChange = viewModel::setShakeEnabled,
-            showSlider = state.settings.shakeEnabled,
-            sliderValue = state.settings.shakeSensitivity,
-            sliderRange = 8f..45f,
-            onSliderValueChange = viewModel::setShakeSensitivity
-        )
-
-        GestureToggleCard(
-            title = "Flip face down to mute incoming call",
-            enabled = state.settings.flipEnabled,
-            onEnabledChange = viewModel::setFlipEnabled
-        )
-
-        GestureToggleCard(
-            title = "Twist wrist twice to open camera",
-            enabled = state.settings.twistEnabled,
-            onEnabledChange = viewModel::setTwistEnabled,
-            showSlider = state.settings.twistEnabled,
-            sliderValue = state.settings.twistSensitivity,
-            sliderRange = 1.2f..7f,
-            onSliderValueChange = viewModel::setTwistSensitivity
-        )
 
         Spacer(modifier = Modifier.height(8.dp))
     }
@@ -170,36 +189,13 @@ private fun PermissionRow(
     }
 }
 
-@Composable
-private fun GestureToggleCard(
-    title: String,
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-    showSlider: Boolean = false,
-    sliderValue: Float = 0f,
-    sliderRange: ClosedFloatingPointRange<Float> = 0f..1f,
-    onSliderValueChange: (Float) -> Unit = {}
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = title, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onEnabledChange
-                )
-            }
-            if (showSlider) {
-                Text("Sensitivity: ${"%.1f".format(sliderValue)}")
-                Slider(
-                    value = sliderValue,
-                    valueRange = sliderRange,
-                    onValueChange = onSliderValueChange
-                )
-            }
-        }
+private fun statusText(stage: TheftGuardStage, alarmActive: Boolean): String {
+    if (alarmActive) return "Alarm triggered"
+    return when (stage) {
+        TheftGuardStage.DISARMED -> "Disarmed"
+        TheftGuardStage.ARMING -> "Arming..."
+        TheftGuardStage.CALIBRATING -> "Calibrating..."
+        TheftGuardStage.MONITORING -> "Monitoring"
+        TheftGuardStage.TRIGGERED -> "Alarm triggered"
     }
 }
