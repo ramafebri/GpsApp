@@ -5,7 +5,7 @@ Guidance for AI coding agents (and humans) working in this repository.
 ## App Overview
 
 **GpsApp** is a native Android app (Kotlin + Jetpack Compose) that turns the phone's motion
-sensors into four independent utilities, presented as four bottom-navigation tabs in a
+sensors into five independent utilities, presented as five bottom-navigation tabs in a
 single `MainActivity`:
 
 1. **Gesture Shortcuts** — a background service listens to the accelerometer/gyroscope and
@@ -20,6 +20,9 @@ single `MainActivity`:
 4. **Bubble Level & Clinometer** — uses the accelerometer to show a 2-axis spirit bubble level
    and read pitch, roll, and slope in degrees; supports calibration, hold/freeze, and tolerance
    settings. Runs only while the Level tab is visible (no background service).
+5. **Digital Compass** — uses the rotation vector sensor to show live heading (0–360°), cardinal
+   direction, and a compass rose; supports magnetic/true-north mode with manual declination offset,
+   smoothing filter, and low-accuracy calibration hints. Runs only while the Compass tab is visible.
 
 > Despite the project name, there is **no live GPS/location integration**. All positioning is
 > done with onboard motion sensors via Pedestrian Dead Reckoning (PDR).
@@ -34,12 +37,13 @@ repository classes backed by Jetpack DataStore, and coordinate sensor-driven "en
 
 ```
 com.rama.gpsapp
-├── MainActivity.kt        # Single-activity host, 4-route bottom nav
+├── MainActivity.kt        # Single-activity host, 5-route bottom nav
 ├── actions/                # Gesture-triggered actions (flashlight, camera, mute call)
 ├── gesture/                 # Sensor -> gesture detection (Shake/Flip/Twist + GestureEngine)
 ├── theft/                   # Anti-theft state machine, alarm service/activity
 ├── pdr/                      # Pedestrian dead reckoning (StepDetector, PdrTracker, PdrEngine)
 ├── level/                     # Bubble level & clinometer (TiltCalculator, LevelEngine)
+├── compass/                   # Digital compass (HeadingCalculator, CompassEngine)
 ├── sensor/                    # SensorHub abstraction over Android SensorManager
 ├── call/                       # Telephony state monitor (for flip-to-mute)
 ├── data/                        # Settings models + DataStore repositories
@@ -47,10 +51,10 @@ com.rama.gpsapp
 └── ui/                             # Compose screens, ViewModels, theme (per feature package)
 ```
 
-Three independent DataStore (Preferences) stores persist settings: `gesture_settings`,
-`anti_theft_settings`, and `level_settings`. Both `GestureShortcutService` and `TheftAlarmService`
+Four independent DataStore (Preferences) stores persist settings: `gesture_settings`,
+`anti_theft_settings`, `level_settings`, and `compass_settings`. Both `GestureShortcutService` and `TheftAlarmService`
 are foreground `LifecycleService`s (`foregroundServiceType="specialUse"`) restarted on boot by
-`BootCompletedReceiver` if they were previously enabled/armed. Level and PDR run only while their
+`BootCompletedReceiver` if they were previously enabled/armed. Level, Compass, and PDR run only while their
 tab is visible (ViewModel-scoped engines, no background service).
 
 ## Tech Stack
@@ -81,15 +85,15 @@ This is a Windows/PowerShell environment; use `gradlew.bat`.
 ```
 
 Always run `.\gradlew.bat test` after modifying detector/engine logic in `gesture/`, `theft/`,
-`pdr/`, or `level/` — these packages have corresponding unit tests under `app/src/test/java/com/rama/gpsapp/`.
+`pdr/`, `level/`, or `compass/` — these packages have corresponding unit tests under `app/src/test/java/com/rama/gpsapp/`.
 
 ## Conventions
 
 - Package-by-feature: new sensor-driven features get their own top-level package (mirroring
-  `gesture/`, `theft/`, `pdr/`, `level/`) with detector/engine classes, a `data/` settings model +
+  `gesture/`, `theft/`, `pdr/`, `level/`, `compass/`) with detector/engine classes, a `data/` settings model +
   repository, and a `ui/<feature>/` Compose screen + ViewModel.
 - Detector classes (e.g. `ShakeDetector`, `FlipDetector`, `TwistDetector`, `StepDetector`,
-  `TiltCalculator`) are plain Kotlin classes that consume `SensorSample`s and are unit-testable
+  `TiltCalculator`, `HeadingCalculator`) are plain Kotlin classes that consume `SensorSample`s and are unit-testable
   in isolation — keep new detection logic in this style rather than embedding it directly in
   services.
 - Settings are modeled as immutable data classes, persisted via DataStore, and exposed as

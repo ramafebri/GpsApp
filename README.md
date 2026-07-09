@@ -1,11 +1,12 @@
 # GpsApp
 
-A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion sensors into four independent utilities:
+A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion sensors into five independent utilities:
 
 1. **Gesture Shortcuts** – trigger actions (flashlight, camera, mute call) with physical gestures (shake, flip, twist).
 2. **Anti-Theft Guard** – arm your phone like a desk alarm; any movement or rotation sets off a loud, full-screen alarm.
 3. **Dead Reckoning (PDR)** – estimate your position and heading using step counting and the compass, without relying on GPS (useful in tunnels, basements, and underground parking).
 4. **Bubble Level & Clinometer** – check surface level with a 2-axis spirit bubble, or read pitch, roll, and slope in degrees.
+5. **Digital Compass** – live heading in degrees and cardinal direction with a compass rose; magnetic or true-north mode.
 
 > **Note:** Despite the project name, the app does not integrate live GPS/location APIs. Positioning is done entirely with onboard motion sensors (accelerometer, gyroscope, rotation vector) via **Pedestrian Dead Reckoning**.
 
@@ -18,6 +19,7 @@ A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion s
   - [2. Anti-Theft Guard](#2-anti-theft-guard)
   - [3. Dead Reckoning (PDR)](#3-dead-reckoning-pdr)
   - [4. Bubble Level & Clinometer](#4-bubble-level--clinometer)
+  - [5. Digital Compass](#5-digital-compass)
 - [Architecture](#architecture)
   - [High-Level Diagram](#high-level-diagram)
   - [Package Structure](#package-structure)
@@ -159,6 +161,38 @@ LevelScreen  →  BubbleLevelCanvas / ClinometerPanel
 - **Controls**: **Calibrate** (zero current orientation), **Hold** / **Resume** (freeze live readings), **Reset** (clear calibration offsets).
 - **Settings**: level-tolerance slider and filter-smoothing slider; persisted via DataStore (`level_settings` store).
 
+### 5. Digital Compass
+
+Uses the rotation vector sensor (fused accelerometer + gyroscope + magnetometer) to show live heading — no background service; sensor listening runs only while the **Compass** tab is visible.
+
+**Sensor processing:**
+
+- **Azimuth** from `SensorManager.getOrientation()` (magnetic north reference, in radians).
+- **Low-pass smoothing** on heading degrees with wrap-around handling across the 0°/360° boundary (`α = 0.85` default, adjustable 0.7–0.95).
+- **True north mode** applies a user-set declination offset (−30° to +30°) since the app does not use GPS/location APIs to look up local declination automatically.
+- **Calibration status** derived from rotation-vector sensor accuracy; a hint banner appears when accuracy is unreliable.
+
+**How it works end-to-end:**
+
+```
+SensorHub (rotation vector + accuracy)
+      │
+      ▼
+CompassEngine  →  HeadingCalculator  (smoothing, declination, cardinal mapping)
+      │
+      ▼
+CompassViewModel  (screen-active-only listening)
+      │
+      ▼
+CompassScreen  →  CompassRoseCanvas
+```
+
+**UI:**
+
+- Compass rose with N/E/S/W labels and a rotating needle.
+- Large numeric heading (0–360°) and 8-point cardinal label (N, NE, E, …).
+- **Settings**: magnetic vs true-north toggle, declination slider (true north only), filter-smoothing slider; persisted via DataStore (`compass_settings` store).
+
 ---
 
 ## Architecture
@@ -170,20 +204,20 @@ The app follows an **MVVM** pattern: Compose screens observe `StateFlow`s expose
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                          MainActivity (Compose)                               │
-│   Bottom Navigation: Gestures | Anti-Theft | Dead Reckoning | Level          │
-└───────────┬─────────────────┬─────────────────┬─────────────────┬────────────┘
-            │                 │                 │                 │
-   GestureSettingsViewModel  AntiTheftViewModel  DeadReckoningViewModel  LevelViewModel
-            │                 │                 │                 │
-  GestureSettingsRepository  AntiTheftSettingsRepository   (in-memory)  LevelSettingsRepository
-            │  (DataStore)    │  (DataStore)                          │  (DataStore)
-            │                 │                 │                 │
-  GestureShortcutService     TheftAlarmService          PdrEngine    LevelEngine
-    (foreground service)     (foreground service)     (ViewModel-scoped) (ViewModel-scoped)
-            │                 │                 │                 │
-     GestureEngine          TheftGuardEngine        StepDetector + PdrTracker  TiltCalculator
-            │                 │                 │                 │
-            └─────────────────┴─────────────────┴─────────────────┘
+│   Bottom Navigation: Gestures | Anti-Theft | Dead Reckoning | Level | Compass   │
+└───────────┬─────────────────┬─────────────────┬─────────────────┬───────────┬───┘
+            │                 │                 │                 │           │
+   GestureSettingsViewModel  AntiTheftViewModel  DeadReckoningViewModel  LevelViewModel  CompassViewModel
+            │                 │                 │                 │           │
+  GestureSettingsRepository  AntiTheftSettingsRepository   (in-memory)  LevelSettingsRepository  CompassSettingsRepository
+            │  (DataStore)    │  (DataStore)                          │  (DataStore)              │  (DataStore)
+            │                 │                 │                 │           │
+  GestureShortcutService     TheftAlarmService          PdrEngine    LevelEngine  CompassEngine
+    (foreground service)     (foreground service)     (ViewModel-scoped) (ViewModel-scoped) (ViewModel-scoped)
+            │                 │                 │                 │           │
+     GestureEngine          TheftGuardEngine        StepDetector + PdrTracker  TiltCalculator  HeadingCalculator
+            │                 │                 │                 │           │
+            └─────────────────┴─────────────────┴─────────────────┴───────────┘
                                         ▼
                          SensorHub (Accelerometer, Gyroscope, Rotation Vector)
 ```
@@ -194,7 +228,7 @@ Cross-cutting piece: `CallStateMonitor` feeds live call state (`IDLE`/`RINGING`/
 
 ```
 com.rama.gpsapp
-├── MainActivity.kt                 # Single-activity host, bottom nav (4 routes)
+├── MainActivity.kt                 # Single-activity host, bottom nav (5 routes)
 ├── actions/                        # Gesture-triggered actions
 │   ├── GestureAction.kt            #   interface + ActionResult contract
 │   ├── ActionResult.kt             #   Success / Ignored / RequiresPermission / Failure
@@ -225,16 +259,24 @@ com.rama.gpsapp
 │   ├── TiltCalculator.kt            #   low-pass filter, pitch/roll/slope math
 │   ├── LevelReading.kt
 │   └── LevelDisplayMode.kt
+├── compass/                         # Digital compass
+│   ├── CompassEngine.kt
+│   ├── HeadingCalculator.kt         #   azimuth smoothing, declination, cardinal mapping
+│   ├── CompassReading.kt
+│   ├── CompassNorthMode.kt
+│   └── CardinalDirection.kt
 ├── sensor/                          # Sensor abstraction
 │   ├── SensorHub.kt
-│   └── SensorSample.kt
+│   ├── SensorSample.kt
+│   └── RotationVectorSample.kt
 ├── call/                            # Telephony state for mute-on-flip
 │   ├── CallStateMonitor.kt
 │   └── CallState.kt
 ├── data/                            # Settings models, DataStore, repositories
 │   ├── GestureSettings.kt / GesturePreferences.kt / GestureSettingsRepository.kt
 │   ├── AntiTheftSettings.kt / AntiTheftPreferences.kt / AntiTheftSettingsRepository.kt
-│   └── LevelSettings.kt / LevelPreferences.kt / LevelSettingsRepository.kt
+│   ├── LevelSettings.kt / LevelPreferences.kt / LevelSettingsRepository.kt
+│   └── CompassSettings.kt / CompassPreferences.kt / CompassSettingsRepository.kt
 ├── service/
 │   ├── GestureShortcutService.kt
 │   └── BootCompletedReceiver.kt
@@ -243,20 +285,22 @@ com.rama.gpsapp
     ├── theft/     (AntiTheftSettingsScreen, AntiTheftViewModel)
     ├── deadreckoning/ (DeadReckoningScreen, DeadReckoningViewModel)
     ├── level/       (LevelScreen, LevelViewModel, BubbleLevelCanvas, ClinometerPanel)
+    ├── compass/     (CompassScreen, CompassViewModel, CompassRoseCanvas)
     └── theme/     (Color, Type, Theme)
 ```
 
 ### Data Persistence
 
-Three independent **Jetpack DataStore (Preferences)** stores back all user-configurable settings, so they survive process death and reboot:
+Four independent **Jetpack DataStore (Preferences)** stores back all user-configurable settings, so they survive process death and reboot:
 
 | Store name | Model | Fields |
 |---|---|---|
 | `gesture_settings` | `GestureSettings` | `serviceEnabled`, per-gesture toggles (shake/flip/twist), `shakeSensitivity`, `twistSensitivity` |
 | `anti_theft_settings` | `AntiTheftSettings` | `armed`, `movementSensitivity`, `rotationSensitivityDegrees`, `armDelaySeconds`, `vibrateEnabled` |
 | `level_settings` | `LevelSettings` | `displayMode`, `levelToleranceDegrees`, `filterAlpha`, `calibrationPitchOffsetDegrees`, `calibrationRollOffsetDegrees` |
+| `compass_settings` | `CompassSettings` | `northMode`, `filterAlpha`, `declinationDegrees` |
 
-Repositories (`GestureSettingsRepository`, `AntiTheftSettingsRepository`, `LevelSettingsRepository`) expose the settings as `Flow`s and provide coerced setters used by the ViewModels (and the background services where applicable).
+Repositories (`GestureSettingsRepository`, `AntiTheftSettingsRepository`, `LevelSettingsRepository`, `CompassSettingsRepository`) expose the settings as `Flow`s and provide coerced setters used by the ViewModels (and the background services where applicable).
 
 ### Background Services
 
@@ -319,6 +363,8 @@ The flashlight and camera-launch actions don't require the `CAMERA` runtime perm
 | `pdr/StepDetectorTest.kt` | Step-peak detection, threshold guard, minimum interval debounce |
 | `pdr/PdrTrackerTest.kt` | Position accumulation for north/east headings, reset behavior |
 | `level/TiltCalculatorTest.kt` | Low-pass filtering, pitch/roll/slope angles, calibration offsets, level tolerance, freeze |
+| `compass/HeadingCalculatorTest.kt` | Azimuth-to-degrees conversion, wrap-around smoothing, true-north declination |
+| `compass/CardinalDirectionTest.kt` | 8-point cardinal label mapping |
 | `ExampleUnitTest.kt` | Placeholder sanity test |
 
 **Instrumented tests** (`app/src/androidTest/java/com/rama/gpsapp/`):

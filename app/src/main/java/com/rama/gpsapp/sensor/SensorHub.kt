@@ -55,6 +55,48 @@ class SensorHub(context: Context) {
         awaitClose { sensorManager.unregisterListener(listener, sensor) }
     }.conflate()
 
+    /**
+     * Like [rotationVector] but also emits sensor accuracy for compass calibration
+     * status. [RotationVectorSample.azimuthRadians] maps to magnetic-north heading.
+     */
+    fun rotationVectorWithAccuracy(): Flow<RotationVectorSample> = callbackFlow {
+        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (sensor == null) {
+            close(IllegalStateException("Sensor type ${Sensor.TYPE_ROTATION_VECTOR} not available"))
+            return@callbackFlow
+        }
+
+        val rotationMatrix = FloatArray(9)
+        val orientation = FloatArray(3)
+        var accuracy = SensorManager.SENSOR_STATUS_ACCURACY_HIGH
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                SensorManager.getOrientation(rotationMatrix, orientation)
+                if (event.values.size >= 5) {
+                    accuracy = event.values[4].toInt()
+                }
+                trySend(
+                    RotationVectorSample(
+                        timestampNanos = event.timestamp,
+                        azimuthRadians = orientation[0],
+                        pitchRadians = orientation[1],
+                        rollRadians = orientation[2],
+                        accuracy = accuracy
+                    )
+                )
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, newAccuracy: Int) {
+                accuracy = newAccuracy
+            }
+        }
+
+        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        awaitClose { sensorManager.unregisterListener(listener, sensor) }
+    }.conflate()
+
     fun hasAccelerometer(): Boolean = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null
 
     fun hasRotationVector(): Boolean = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null

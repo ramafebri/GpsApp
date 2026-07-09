@@ -25,6 +25,8 @@ import com.rama.gpsapp.ui.deadreckoning.DeadReckoningScreen
 import com.rama.gpsapp.ui.deadreckoning.DeadReckoningViewModel
 import com.rama.gpsapp.ui.gestures.GestureSettingsScreen
 import com.rama.gpsapp.ui.gestures.GestureSettingsViewModel
+import com.rama.gpsapp.ui.compass.CompassScreen
+import com.rama.gpsapp.ui.compass.CompassViewModel
 import com.rama.gpsapp.ui.level.LevelScreen
 import com.rama.gpsapp.ui.level.LevelViewModel
 import com.rama.gpsapp.ui.theme.GpsAppTheme
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
                 val antiTheftViewModel: AntiTheftViewModel = viewModel()
                 val deadReckoningViewModel: DeadReckoningViewModel = viewModel()
                 val levelViewModel: LevelViewModel = viewModel()
+                val compassViewModel: CompassViewModel = viewModel()
                 val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
@@ -60,7 +63,8 @@ class MainActivity : ComponentActivity() {
                     AppDestination.Gestures,
                     AppDestination.AntiTheft,
                     AppDestination.DeadReckoning,
-                    AppDestination.Level
+                    AppDestination.Level,
+                    AppDestination.Compass
                 )
                 val backStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = backStackEntry?.destination
@@ -118,6 +122,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
+                        composable(AppDestination.Compass.route) {
+                            CompassScreen(
+                                viewModel = compassViewModel,
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                        }
                     }
                 }
             }
@@ -152,5 +162,11 @@ private sealed class AppDestination(
         route = "level",
         label = "Level",
         shortLabel = "L"
+    )
+
+    object Compass : AppDestination(
+        route = "compass",
+        label = "Compass",
+        shortLabel = "C"
     )
 }
