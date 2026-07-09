@@ -25,6 +25,8 @@ import com.rama.gpsapp.ui.deadreckoning.DeadReckoningScreen
 import com.rama.gpsapp.ui.deadreckoning.DeadReckoningViewModel
 import com.rama.gpsapp.ui.gestures.GestureSettingsScreen
 import com.rama.gpsapp.ui.gestures.GestureSettingsViewModel
+import com.rama.gpsapp.ui.level.LevelScreen
+import com.rama.gpsapp.ui.level.LevelViewModel
 import com.rama.gpsapp.ui.theme.GpsAppTheme
 import com.rama.gpsapp.ui.theft.AntiTheftSettingsScreen
 import com.rama.gpsapp.ui.theft.AntiTheftViewModel
@@ -38,6 +40,7 @@ class MainActivity : ComponentActivity() {
                 val gestureViewModel: GestureSettingsViewModel = viewModel()
                 val antiTheftViewModel: AntiTheftViewModel = viewModel()
                 val deadReckoningViewModel: DeadReckoningViewModel = viewModel()
+                val levelViewModel: LevelViewModel = viewModel()
                 val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
@@ -56,7 +59,8 @@ class MainActivity : ComponentActivity() {
                 val destinations = listOf(
                     AppDestination.Gestures,
                     AppDestination.AntiTheft,
-                    AppDestination.DeadReckoning
+                    AppDestination.DeadReckoning,
+                    AppDestination.Level
                 )
                 val backStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = backStackEntry?.destination
@@ -108,6 +112,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
+                        composable(AppDestination.Level.route) {
+                            LevelScreen(
+                                viewModel = levelViewModel,
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                        }
                     }
                 }
             }
@@ -136,5 +146,11 @@ private sealed class AppDestination(
         route = "dead_reckoning",
         label = "Dead Reckoning",
         shortLabel = "D"
+    )
+
+    object Level : AppDestination(
+        route = "level",
+        label = "Level",
+        shortLabel = "L"
     )
 }

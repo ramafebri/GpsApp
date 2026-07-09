@@ -1,10 +1,11 @@
 # GpsApp
 
-A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion sensors into three independent utilities:
+A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion sensors into four independent utilities:
 
 1. **Gesture Shortcuts** – trigger actions (flashlight, camera, mute call) with physical gestures (shake, flip, twist).
 2. **Anti-Theft Guard** – arm your phone like a desk alarm; any movement or rotation sets off a loud, full-screen alarm.
 3. **Dead Reckoning (PDR)** – estimate your position and heading using step counting and the compass, without relying on GPS (useful in tunnels, basements, and underground parking).
+4. **Bubble Level & Clinometer** – check surface level with a 2-axis spirit bubble, or read pitch, roll, and slope in degrees.
 
 > **Note:** Despite the project name, the app does not integrate live GPS/location APIs. Positioning is done entirely with onboard motion sensors (accelerometer, gyroscope, rotation vector) via **Pedestrian Dead Reckoning**.
 
@@ -16,6 +17,7 @@ A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion s
   - [1. Gesture Shortcuts](#1-gesture-shortcuts)
   - [2. Anti-Theft Guard](#2-anti-theft-guard)
   - [3. Dead Reckoning (PDR)](#3-dead-reckoning-pdr)
+  - [4. Bubble Level & Clinometer](#4-bubble-level--clinometer)
 - [Architecture](#architecture)
   - [High-Level Diagram](#high-level-diagram)
   - [Package Structure](#package-structure)
@@ -104,6 +106,59 @@ Estimates a 2D position trail without GPS, by combining step detection with comp
   Default step length is **0.75 m**, adjustable between 0.4–1.1 m for personal calibration.
 - **UI**: a live canvas draws the walked path on a grid with a heading arrow, plus running stats for step count, heading (degrees), and X/Y coordinates. Start / Stop / Reset controls are provided, and tracking runs only while the screen is open (no background service).
 
+### 4. Bubble Level & Clinometer
+
+Uses the accelerometer to show whether a surface is level and to read tilt angles — no background service; sensor listening runs only while the **Level** tab is visible (lifecycle-aware via `repeatOnLifecycle`).
+
+**Sensor processing:**
+
+- **Low-pass filter** on each accelerometer axis (`α = 0.85` default, adjustable 0.7–0.95):
+
+  ```
+  filtered = α × filtered + (1 − α) × sample
+  ```
+
+- **Pitch** (forward/back tilt):
+
+  ```
+  pitch = atan2(−x, √(y² + z²))
+  ```
+
+- **Roll** (left/right tilt):
+
+  ```
+  roll = atan2(y, z)
+  ```
+
+- **Slope** (overall tilt from horizontal):
+
+  ```
+  slope = atan2(√(x² + y²), |z|)
+  ```
+
+  All angles are converted to degrees. **Calibration** stores the current pitch/roll as offsets so the resting orientation reads as zero. A surface is **level** when both `|pitch|` and `|roll|` are within the tolerance (default **1.0°**, range **0.5–5.0°**). Bubble position maps pitch/roll to normalized offsets in `[−1, 1]` using a 15° full deflection.
+
+**How it works end-to-end:**
+
+```
+SensorHub (accelerometer)
+      │
+      ▼
+LevelEngine  →  TiltCalculator  (low-pass filter, angle math, calibration, freeze)
+      │
+      ▼
+LevelViewModel  (screen-active-only listening)
+      │
+      ▼
+LevelScreen  →  BubbleLevelCanvas / ClinometerPanel
+```
+
+**UI:**
+
+- **Display modes** (toggle via segmented control): **Bubble** (2-axis spirit level with crosshairs and center target), **Clinometer** (pitch, roll, slope in degrees with LEVEL badge), or **Combined** (both).
+- **Controls**: **Calibrate** (zero current orientation), **Hold** / **Resume** (freeze live readings), **Reset** (clear calibration offsets).
+- **Settings**: level-tolerance slider and filter-smoothing slider; persisted via DataStore (`level_settings` store).
+
 ---
 
 ## Architecture
@@ -113,23 +168,23 @@ The app follows an **MVVM** pattern: Compose screens observe `StateFlow`s expose
 ### High-Level Diagram
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                     MainActivity (Compose)                     │
-│      Bottom Navigation: Gestures | Anti-Theft | Dead Reckoning │
-└───────────┬────────────────────┬────────────────┬──────────────┘
-            │                    │                │
-   GestureSettingsViewModel  AntiTheftViewModel  DeadReckoningViewModel
-            │                    │                │
-  GestureSettingsRepository  AntiTheftSettingsRepository   (in-memory)
-            │  (DataStore)       │  (DataStore)             │
-            │                    │                          │
-  GestureShortcutService     TheftAlarmService          PdrEngine
-    (foreground service)     (foreground service)     (ViewModel-scoped)
-            │                    │                          │
-     GestureEngine          TheftGuardEngine        StepDetector + PdrTracker
-            │                    │                          │
-            └──────────────┬─────┴──────────────┬───────────┘
-                            ▼                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          MainActivity (Compose)                               │
+│   Bottom Navigation: Gestures | Anti-Theft | Dead Reckoning | Level          │
+└───────────┬─────────────────┬─────────────────┬─────────────────┬────────────┘
+            │                 │                 │                 │
+   GestureSettingsViewModel  AntiTheftViewModel  DeadReckoningViewModel  LevelViewModel
+            │                 │                 │                 │
+  GestureSettingsRepository  AntiTheftSettingsRepository   (in-memory)  LevelSettingsRepository
+            │  (DataStore)    │  (DataStore)                          │  (DataStore)
+            │                 │                 │                 │
+  GestureShortcutService     TheftAlarmService          PdrEngine    LevelEngine
+    (foreground service)     (foreground service)     (ViewModel-scoped) (ViewModel-scoped)
+            │                 │                 │                 │
+     GestureEngine          TheftGuardEngine        StepDetector + PdrTracker  TiltCalculator
+            │                 │                 │                 │
+            └─────────────────┴─────────────────┴─────────────────┘
+                                        ▼
                          SensorHub (Accelerometer, Gyroscope, Rotation Vector)
 ```
 
@@ -139,7 +194,7 @@ Cross-cutting piece: `CallStateMonitor` feeds live call state (`IDLE`/`RINGING`/
 
 ```
 com.rama.gpsapp
-├── MainActivity.kt                 # Single-activity host, bottom nav (3 routes)
+├── MainActivity.kt                 # Single-activity host, bottom nav (4 routes)
 ├── actions/                        # Gesture-triggered actions
 │   ├── GestureAction.kt            #   interface + ActionResult contract
 │   ├── ActionResult.kt             #   Success / Ignored / RequiresPermission / Failure
@@ -165,6 +220,11 @@ com.rama.gpsapp
 │   ├── PdrTracker.kt
 │   ├── StepDetector.kt
 │   └── PdrPosition.kt
+├── level/                           # Bubble level & clinometer
+│   ├── LevelEngine.kt
+│   ├── TiltCalculator.kt            #   low-pass filter, pitch/roll/slope math
+│   ├── LevelReading.kt
+│   └── LevelDisplayMode.kt
 ├── sensor/                          # Sensor abstraction
 │   ├── SensorHub.kt
 │   └── SensorSample.kt
@@ -173,7 +233,8 @@ com.rama.gpsapp
 │   └── CallState.kt
 ├── data/                            # Settings models, DataStore, repositories
 │   ├── GestureSettings.kt / GesturePreferences.kt / GestureSettingsRepository.kt
-│   └── AntiTheftSettings.kt / AntiTheftPreferences.kt / AntiTheftSettingsRepository.kt
+│   ├── AntiTheftSettings.kt / AntiTheftPreferences.kt / AntiTheftSettingsRepository.kt
+│   └── LevelSettings.kt / LevelPreferences.kt / LevelSettingsRepository.kt
 ├── service/
 │   ├── GestureShortcutService.kt
 │   └── BootCompletedReceiver.kt
@@ -181,19 +242,21 @@ com.rama.gpsapp
     ├── gestures/  (GestureSettingsScreen, GestureSettingsViewModel)
     ├── theft/     (AntiTheftSettingsScreen, AntiTheftViewModel)
     ├── deadreckoning/ (DeadReckoningScreen, DeadReckoningViewModel)
+    ├── level/       (LevelScreen, LevelViewModel, BubbleLevelCanvas, ClinometerPanel)
     └── theme/     (Color, Type, Theme)
 ```
 
 ### Data Persistence
 
-Two independent **Jetpack DataStore (Preferences)** stores back all user-configurable settings, so they survive process death and reboot:
+Three independent **Jetpack DataStore (Preferences)** stores back all user-configurable settings, so they survive process death and reboot:
 
 | Store name | Model | Fields |
 |---|---|---|
 | `gesture_settings` | `GestureSettings` | `serviceEnabled`, per-gesture toggles (shake/flip/twist), `shakeSensitivity`, `twistSensitivity` |
 | `anti_theft_settings` | `AntiTheftSettings` | `armed`, `movementSensitivity`, `rotationSensitivityDegrees`, `armDelaySeconds`, `vibrateEnabled` |
+| `level_settings` | `LevelSettings` | `displayMode`, `levelToleranceDegrees`, `filterAlpha`, `calibrationPitchOffsetDegrees`, `calibrationRollOffsetDegrees` |
 
-Repositories (`GestureSettingsRepository`, `AntiTheftSettingsRepository`) expose the settings as `Flow`s and provide coerced setters used by both the ViewModels and the background services.
+Repositories (`GestureSettingsRepository`, `AntiTheftSettingsRepository`, `LevelSettingsRepository`) expose the settings as `Flow`s and provide coerced setters used by the ViewModels (and the background services where applicable).
 
 ### Background Services
 
@@ -215,7 +278,7 @@ Both long-running features run as **foreground `LifecycleService`s** with `foreg
 | Language | **Kotlin 2.2** |
 | UI Toolkit | **Jetpack Compose** + **Material 3** |
 | Architecture Pattern | **MVVM** (`ViewModel` + `StateFlow`/`Flow`) |
-| Navigation | **Navigation Compose** (bottom navigation bar, 3 routes) |
+| Navigation | **Navigation Compose** (bottom navigation bar, 4 routes) |
 | Concurrency | **Kotlin Coroutines & Flow** |
 | Local Persistence | **Jetpack DataStore (Preferences)** |
 | Background Execution | **Foreground `LifecycleService`s** |
@@ -255,6 +318,7 @@ The flashlight and camera-launch actions don't require the `CAMERA` runtime perm
 | `theft/TheftGuardDetectorTest.kt` | Arm delay, calibration restart, movement/rotation triggers, disarm reset |
 | `pdr/StepDetectorTest.kt` | Step-peak detection, threshold guard, minimum interval debounce |
 | `pdr/PdrTrackerTest.kt` | Position accumulation for north/east headings, reset behavior |
+| `level/TiltCalculatorTest.kt` | Low-pass filtering, pitch/roll/slope angles, calibration offsets, level tolerance, freeze |
 | `ExampleUnitTest.kt` | Placeholder sanity test |
 
 **Instrumented tests** (`app/src/androidTest/java/com/rama/gpsapp/`):
