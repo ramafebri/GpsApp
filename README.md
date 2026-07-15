@@ -12,8 +12,25 @@ A native Android app (Kotlin + Jetpack Compose) that turns your phone's motion s
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="ss/Screenshot_20260715_075305.png" alt="Gesture Shortcuts" width="180"/>
+  <img src="ss/Screenshot_20260715_075328.png" alt="Anti-Theft Guard" width="180"/>
+  <img src="ss/Screenshot_20260715_075337.png" alt="Dead Reckoning" width="180"/>
+  <img src="ss/Screenshot_20260715_075404.png" alt="Bubble Level & Clinometer" width="180"/>
+  <img src="ss/Screenshot_20260715_075414.png" alt="Digital Compass" width="180"/>
+</p>
+
+| Gestures | Anti-Theft | Dead Reckoning | Level | Compass |
+|:---:|:---:|:---:|:---:|:---:|
+| Shake / flip / twist shortcuts | Desk motion alarm | Step + heading trail | Bubble & clinometer | Live heading rose |
+
+---
+
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Features](#features)
   - [1. Gesture Shortcuts](#1-gesture-shortcuts)
   - [2. Anti-Theft Guard](#2-anti-theft-guard)
